@@ -32,8 +32,8 @@ A diretoria solicita entender quanto cada território representa do faturamento 
 
 ---
 
-## 5. Identificação de pedidos fora do padrão (outliers)
-A área financeira deseja identificar pedidos com valores significativamente acima do padrão mensal para fins de auditoria.
+
+## Análise 5 – Pareto do Faturamento por Produto
 
 ---
 
@@ -151,43 +151,46 @@ ORDER BY ano, participacao_percentual DESC;
 
 ---
 
-## 5. Identificação de pedidos fora do padrão (outliers)
+# Análise 5 – Pareto do Faturamento por Produto
+---
+
+## Query – Pareto do Faturamento por Pedido (Ano/Mês)
 
 ```sql
-WITH pedido_valor AS (
+WITH produto_valor AS (
     SELECT
-        f.SalesOrderNumber,
-        d.CalendarYear AS ano,
-        d.MonthNumberOfYear AS mes,
-        SUM(f.SalesAmount) AS valor_pedido
+        f.ProductKey,
+        SUM(f.SalesAmount) AS faturamento
     FROM dbo.FactInternetSales f
-    JOIN dbo.DimDate d
-        ON d.DateKey = f.OrderDateKey
-    GROUP BY f.SalesOrderNumber, d.CalendarYear, d.MonthNumberOfYear
+    GROUP BY
+        f.ProductKey
 ),
-estatisticas_mensais AS (
+produto_ordenado AS (
     SELECT
-        ano,
-        mes,
-        AVG(valor_pedido) AS media_mensal,
-        STDEV(valor_pedido) AS desvio_padrao
-    FROM pedido_valor
-    GROUP BY ano, mes
+        ProductKey,
+        faturamento,
+        SUM(faturamento) OVER () AS faturamento_total,
+        SUM(faturamento) OVER (
+            ORDER BY faturamento DESC, ProductKey
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS faturamento_acumulado
+    FROM produto_valor
 )
 SELECT
-    p.SalesOrderNumber,
-    p.ano,
-    p.mes,
-    p.valor_pedido,
-    e.media_mensal,
-    e.desvio_padrao
-FROM pedido_valor p
-JOIN estatisticas_mensais e
-    ON e.ano = p.ano
-   AND e.mes = p.mes
-WHERE p.valor_pedido > e.media_mensal + 2 * e.desvio_padrao
-ORDER BY p.valor_pedido DESC;
-```
+    p.EnglishProductName AS produto,
+    o.ProductKey,
+    o.faturamento,
+    CAST(
+        100.0 * o.faturamento_acumulado / NULLIF(o.faturamento_total, 0)
+        AS decimal(10,2)
+    ) AS perc_acumulado
+FROM produto_ordenado o
+JOIN dbo.DimProduct p
+    ON p.ProductKey = o.ProductKey
+ORDER BY
+    o.faturamento DESC,
+    o.ProductKey;
+
 
 ---
 
